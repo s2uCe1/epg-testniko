@@ -2,7 +2,6 @@ name: Update EPG Daily
 
 on:
   schedule:
-    # Runs at 01:00 UTC (03:00 AM local CEST)
     - cron: '0 1 * * *'
   workflow_dispatch:
 
