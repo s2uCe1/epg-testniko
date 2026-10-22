@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 import requests
 from channel_map import CHANNEL_MAPPING
 
-# All your selected sources
 URLS = [
     "https://www.open-epg.com/files/albania.xml.gz",
     "https://www.open-epg.com/files/australia.xml.gz",
@@ -100,7 +99,6 @@ for idx, url in enumerate(URLS, 1):
                 tree = ET.parse(gz)
                 root = tree.getroot()
                 
-                # Check if this file has any channels you need
                 feed_channel_ids = {ch.get("id") for ch in root.findall("channel")}
                 matches = feed_channel_ids.intersection(needed_ids)
                 
@@ -114,20 +112,19 @@ for idx, url in enumerate(URLS, 1):
     except Exception as e:
         print(f"Error fetching {feed_name}: {e}")
 
-# Inject aliases
+# Ensure every channel retains its explicit channel ID as the primary display-name
 channel_elements = {ch.get("id"): ch for ch in combined_root.findall("channel")}
-injected_count = 0
 
-for raw_name, target_id in CHANNEL_MAPPING.items():
-    if target_id in channel_elements:
-        dn = ET.Element("display-name")
-        dn.text = raw_name
-        channel_elements[target_id].append(dn)
-        injected_count += 1
+for cid, ch_elem in channel_elements.items():
+    existing_names = [dn.text for dn in ch_elem.findall("display-name") if dn.text]
+    
+    # Place channel ID (e.g. HRT1.hr, SLO1.si) right at the top of display-name tags
+    if cid not in existing_names:
+        id_dn = ET.Element("display-name")
+        id_dn.text = cid
+        ch_elem.insert(0, id_dn)
 
-print(f"Injected {injected_count} custom aliases.")
-
-print("Saving compressed master file...")
+print("Writing XML with native regional IDs preserved...")
 with gzip.open(OUTPUT_FILE, "wb") as f_out:
     ET.ElementTree(combined_root).write(f_out, encoding="utf-8", xml_declaration=True)
 
