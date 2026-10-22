@@ -2,7 +2,8 @@ name: Update EPG Daily
 
 on:
   schedule:
-    - cron: '0 4 * * *'
+    # 01:00 UTC corresponds to 03:00 AM CEST (Croatia local time)
+    - cron: '0 1 * * *'
   workflow_dispatch:
 
 permissions:
@@ -11,7 +12,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
