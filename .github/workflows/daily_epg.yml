@@ -2,7 +2,7 @@ name: Update EPG Daily
 
 on:
   schedule:
-    # 01:00 UTC corresponds to 03:00 AM CEST (Croatia local time)
+    # Runs at 01:00 UTC (03:00 AM local CEST)
     - cron: '0 1 * * *'
   workflow_dispatch:
 
@@ -34,4 +34,4 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add combined_epg.xml.gz
-          git diff --staged --quiet || (git commit -m "Update combined EPG [skip ci]" && git push)
+          git diff --staged --quiet || (git commit -m "Update combined EPG [skip ci]" && git pull --rebase origin main && git push origin main)
