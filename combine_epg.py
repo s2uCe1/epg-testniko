@@ -1,8 +1,14 @@
 import gzip
 import io
+import time
 import xml.etree.ElementTree as ET
 import requests
-from channel_map import CHANNEL_MAPPING
+
+# Try importing channel map if present; otherwise proceed without it
+try:
+    from channel_map import CHANNEL_MAPPING
+except ImportError:
+    CHANNEL_MAPPING = {}
 
 URLS = [
     "https://www.open-epg.com/files/albania.xml.gz",
@@ -86,8 +92,8 @@ OUTPUT_FILE = "combined_epg.xml.gz"
 headers = {"User-Agent": "Mozilla/5.0"}
 combined_root = ET.Element("tv")
 
-needed_ids = set(CHANNEL_MAPPING.values())
-print(f"Targeting {len(needed_ids)} unique channels.")
+seen_channels = set()
+channel_elements = {}
 
 for idx, url in enumerate(URLS, 1):
     feed_name = url.split('/')[-1]
@@ -99,33 +105,43 @@ for idx, url in enumerate(URLS, 1):
                 tree = ET.parse(gz)
                 root = tree.getroot()
                 
-                feed_channel_ids = {ch.get("id") for ch in root.findall("channel")}
-                matches = feed_channel_ids.intersection(needed_ids)
-                
-                if matches:
-                    print(f"-> Found {len(matches)} matched channels in {feed_name}")
-                    for elem in root:
-                        if elem.tag == "channel" and elem.get("id") in needed_ids:
+                # Append ALL channels and programmes without filtering
+                for elem in root:
+                    if elem.tag == "channel":
+                        cid = elem.get("id")
+                        if cid and cid not in seen_channels:
+                            seen_channels.add(cid)
+                            channel_elements[cid] = elem
                             combined_root.append(elem)
-                        elif elem.tag == "programme" and elem.get("channel") in needed_ids:
-                            combined_root.append(elem)
+                    elif elem.tag == "programme":
+                        combined_root.append(elem)
     except Exception as e:
         print(f"Error fetching {feed_name}: {e}")
+    time.sleep(0.5)
 
-# Ensure every channel retains its explicit channel ID as the primary display-name
-channel_elements = {ch.get("id"): ch for ch in combined_root.findall("channel")}
+print(f"Total unique channels collected: {len(seen_channels)}")
 
+# Ensure regional ID is the primary display name
 for cid, ch_elem in channel_elements.items():
     existing_names = [dn.text for dn in ch_elem.findall("display-name") if dn.text]
-    
-    # Place channel ID (e.g. HRT1.hr, SLO1.si) right at the top of display-name tags
     if cid not in existing_names:
         id_dn = ET.Element("display-name")
         id_dn.text = cid
         ch_elem.insert(0, id_dn)
 
-print("Writing XML with native regional IDs preserved...")
+# Inject playlist titles for auto-matching if available
+injected_count = 0
+for raw_name, target_id in CHANNEL_MAPPING.items():
+    if target_id in channel_elements:
+        dn = ET.Element("display-name")
+        dn.text = raw_name
+        channel_elements[target_id].append(dn)
+        injected_count += 1
+
+print(f"Injected {injected_count} playlist aliases.")
+
+print("Saving complete combined EPG...")
 with gzip.open(OUTPUT_FILE, "wb") as f_out:
     ET.ElementTree(combined_root).write(f_out, encoding="utf-8", xml_declaration=True)
 
-print("Done! combined_epg.xml.gz updated.")
+print("Done! combined_epg.xml.gz contains all channels.")
