@@ -5,11 +5,6 @@ import datetime
 import xml.etree.ElementTree as ET
 import requests
 
-try:
-    from channel_map import CHANNEL_MAPPING
-except ImportError:
-    CHANNEL_MAPPING = {}
-
 URLS = [
     "https://www.open-epg.com/files/albania.xml.gz",
     "https://www.open-epg.com/files/australia.xml.gz",
@@ -91,14 +86,12 @@ URLS = [
 OUTPUT_FILE = "combined_epg.xml.gz"
 headers = {"User-Agent": "Mozilla/5.0"}
 combined_root = ET.Element("tv")
-
 seen_channels = set()
-channel_elements = {}
 
-# Time window: exactly 24 hours back and 24 hours ahead
+# Time limits: -24 hours past, +24 hours future
 now = datetime.datetime.now(datetime.timezone.utc)
-min_time_str = (now - datetime.timedelta(days=1)).strftime("%Y%m%d%H%M%S")
-max_time_str = (now + datetime.timedelta(days=1)).strftime("%Y%m%d%H%M%S")
+min_time = (now - datetime.timedelta(days=1)).strftime("%Y%m%d%H%M%S")
+max_time = (now + datetime.timedelta(days=1)).strftime("%Y%m%d%H%M%S")
 
 for idx, url in enumerate(URLS, 1):
     feed_name = url.split('/')[-1]
@@ -109,19 +102,15 @@ for idx, url in enumerate(URLS, 1):
             with gzip.GzipFile(fileobj=io.BytesIO(res.content)) as gz:
                 tree = ET.parse(gz)
                 root = tree.getroot()
-                
                 for elem in root:
                     if elem.tag == "channel":
                         cid = elem.get("id")
                         if cid and cid not in seen_channels:
                             seen_channels.add(cid)
-                            channel_elements[cid] = elem
                             combined_root.append(elem)
                     elif elem.tag == "programme":
-                        start_time = elem.get("start", "")[:14]
-                        # Retain only listings within the 2-day window (-24h to +24h)
-                        if min_time_str <= start_time <= max_time_str:
-                            # Strip ONLY heavy descriptions; leave titles, genres, ratings, etc.
+                        start = elem.get("start", "")[:14]
+                        if min_time <= start <= max_time:
                             for desc in elem.findall("desc"):
                                 elem.remove(desc)
                             combined_root.append(elem)
@@ -129,29 +118,9 @@ for idx, url in enumerate(URLS, 1):
         print(f"Error fetching {feed_name}: {e}")
     time.sleep(0.5)
 
-print(f"Total channels retained: {len(seen_channels)}")
-
-# Preserve regional IDs in display-name
-for cid, ch_elem in channel_elements.items():
-    existing_names = [dn.text for dn in ch_elem.findall("display-name") if dn.text]
-    if cid not in existing_names:
-        id_dn = ET.Element("display-name")
-        id_dn.text = cid
-        ch_elem.insert(0, id_dn)
-
-# Inject playlist mappings for auto-match
-injected_count = 0
-for raw_name, target_id in CHANNEL_MAPPING.items():
-    if target_id in channel_elements:
-        dn = ET.Element("display-name")
-        dn.text = raw_name
-        channel_elements[target_id].append(dn)
-        injected_count += 1
-
-print(f"Injected {injected_count} playlist aliases.")
-
-print("Saving trimmed combined EPG...")
+print(f"Total channels: {len(seen_channels)}")
+print("Writing file...")
 with gzip.open(OUTPUT_FILE, "wb", compresslevel=9) as f_out:
     ET.ElementTree(combined_root).write(f_out, encoding="utf-8", xml_declaration=True)
 
-print("Done! Optimized combined_epg.xml.gz generated.")
+print("Done!")
