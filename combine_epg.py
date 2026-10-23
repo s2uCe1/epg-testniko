@@ -85,10 +85,12 @@ URLS = [
 
 OUTPUT_FILE = "combined_epg.xml.gz"
 headers = {"User-Agent": "Mozilla/5.0"}
-combined_root = ET.Element("tv")
+
+channels_list = []
+programmes_list = []
 seen_channels = set()
 
-# Time limits: -24 hours past, +24 hours future
+# Window: 24h past to 24h future
 now = datetime.datetime.now(datetime.timezone.utc)
 min_time = (now - datetime.timedelta(days=1)).strftime("%Y%m%d%H%M%S")
 max_time = (now + datetime.timedelta(days=1)).strftime("%Y%m%d%H%M%S")
@@ -102,25 +104,38 @@ for idx, url in enumerate(URLS, 1):
             with gzip.GzipFile(fileobj=io.BytesIO(res.content)) as gz:
                 tree = ET.parse(gz)
                 root = tree.getroot()
+                
                 for elem in root:
                     if elem.tag == "channel":
                         cid = elem.get("id")
                         if cid and cid not in seen_channels:
                             seen_channels.add(cid)
-                            combined_root.append(elem)
+                            channels_list.append(elem)
                     elif elem.tag == "programme":
                         start = elem.get("start", "")[:14]
                         if min_time <= start <= max_time:
                             for desc in elem.findall("desc"):
                                 elem.remove(desc)
-                            combined_root.append(elem)
+                            programmes_list.append(elem)
     except Exception as e:
         print(f"Error fetching {feed_name}: {e}")
-    time.sleep(0.5)
+    time.sleep(0.3)
 
-print(f"Total channels: {len(seen_channels)}")
+print(f"Channels: {len(channels_list)} | Programmes: {len(programmes_list)}")
+
+# Build standard XMLTV tree
+combined_root = ET.Element("tv")
+
+# 1. Channels MUST come first in valid XMLTV
+for ch in channels_list:
+    combined_root.append(ch)
+
+# 2. Programmes follow after all channels
+for pr in programmes_list:
+    combined_root.append(pr)
+
 print("Writing file...")
 with gzip.open(OUTPUT_FILE, "wb", compresslevel=9) as f_out:
     ET.ElementTree(combined_root).write(f_out, encoding="utf-8", xml_declaration=True)
 
-print("Done!")
+print("Finished successfully.")
